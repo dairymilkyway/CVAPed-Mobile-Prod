@@ -1,5 +1,6 @@
 node_modules/
 .expo/
+.expo-shared/
 dist/
 web-build/
 .env
@@ -8,5 +9,14 @@ web-build/
 npm-debug.*
 yarn-debug.*
 yarn-error.*
-.android/
-.ios/
+.tools/
+android/.gradle/
+android/build/
+android/app/build/
+android/app/debug/
+android/app/release/
+android/**/*.keystore
+ios/build/
+ios/Pods/
+*.apk
+*.aab
