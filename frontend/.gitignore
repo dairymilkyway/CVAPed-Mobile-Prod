@@ -35,7 +35,7 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
-
+.env
 # generated native folders
 /ios
 # Keep android directory for EAS Build to preserve keystore fingerprint

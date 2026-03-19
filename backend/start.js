@@ -1,4 +1,6 @@
 const { spawn } = require('child_process');
+const http = require('http');
+const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -123,6 +125,50 @@ function startNodeService() {
   });
 }
 
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function requestHealth(url) {
+  const client = url.startsWith('https') ? https : http;
+
+  return new Promise((resolve, reject) => {
+    const req = client.get(url, res => {
+      const chunks = [];
+
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => {
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          resolve(Buffer.concat(chunks).toString('utf8'));
+          return;
+        }
+
+        reject(new Error(`Health check failed for ${url} with status ${res.statusCode}`));
+      });
+    });
+
+    req.setTimeout(3000, () => req.destroy(new Error(`Timed out waiting for ${url}`)));
+    req.on('error', reject);
+  });
+}
+
+async function waitForService(name, url, timeoutMs = 90000) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      await requestHealth(url);
+      console.log(`[READY] ${name} is responding at ${url}`);
+      return;
+    } catch (error) {
+      console.log(`[WAIT] ${name} not ready yet: ${error.message}`);
+      await wait(2000);
+    }
+  }
+
+  throw new Error(`${name} did not become ready within ${timeoutMs / 1000}s`);
+}
+
 function getNodeEntryPath() {
   const resolvedEntry = path.join(backendDir, nodeAppEntry);
 
@@ -199,6 +245,9 @@ async function main() {
     console.log(`  -> ${service.name} on port ${service.port}`);
     children.push(startPythonService(service));
   }
+
+  await waitForService('Gait Analysis', `http://127.0.0.1:${gaitPort}/health`);
+  await waitForService('Therapy API', `http://127.0.0.1:${therapyPort}/api/therapy/health`);
 
   console.log(`  -> Node API on port ${nodePort}`);
   children.push(startNodeService());

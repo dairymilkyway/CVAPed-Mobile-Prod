@@ -40,6 +40,15 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
     deviceMotion: [],
   });
   const [pedometerData, setPedometerData] = useState({ steps: 0, start: null, end: null });
+  const sensorDataRef = useRef({
+    accelerometer: [],
+    gyroscope: [],
+    magnetometer: [],
+    barometer: [],
+    deviceMotion: [],
+  });
+  const pedometerDataRef = useRef({ steps: 0, start: null, end: null });
+  const recordingTimeRef = useRef(0);
 
   // Analysis state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -103,6 +112,18 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
     return undefined;
   }, [isRecording, recordingTime]);
 
+  useEffect(() => {
+    sensorDataRef.current = sensorData;
+  }, [sensorData]);
+
+  useEffect(() => {
+    pedometerDataRef.current = pedometerData;
+  }, [pedometerData]);
+
+  useEffect(() => {
+    recordingTimeRef.current = recordingTime;
+  }, [recordingTime]);
+
   // Start recording sensor data
   const startRecording = async () => {
     try {
@@ -123,17 +144,26 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
         barometer: [],
         deviceMotion: [],
       });
+      sensorDataRef.current = {
+        accelerometer: [],
+        gyroscope: [],
+        magnetometer: [],
+        barometer: [],
+        deviceMotion: [],
+      };
       setPedometerData({ steps: 0, start: Date.now(), end: null });
+      pedometerDataRef.current = { steps: 0, start: Date.now(), end: null };
       setRecordingTime(0);
+      recordingTimeRef.current = 0;
       setAnalysisResult(null);
 
       console.log('Subscribing to accelerometer...');
       // Subscribe to accelerometer
       accelerometerSubscription.current = Accelerometer.addListener((data) => {
-        setSensorData((prev) => ({
-          ...prev,
+        const nextData = {
+          ...sensorDataRef.current,
           accelerometer: [
-            ...prev.accelerometer,
+            ...sensorDataRef.current.accelerometer,
             {
               x: data.x,
               y: data.y,
@@ -141,16 +171,18 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
               timestamp: Date.now(),
             },
           ],
-        }));
+        };
+        sensorDataRef.current = nextData;
+        setSensorData(nextData);
       });
 
       console.log('Subscribing to gyroscope...');
       // Subscribe to gyroscope
       gyroscopeSubscription.current = Gyroscope.addListener((data) => {
-        setSensorData((prev) => ({
-          ...prev,
+        const nextData = {
+          ...sensorDataRef.current,
           gyroscope: [
-            ...prev.gyroscope,
+            ...sensorDataRef.current.gyroscope,
             {
               x: data.x,
               y: data.y,
@@ -158,16 +190,18 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
               timestamp: Date.now(),
             },
           ],
-        }));
+        };
+        sensorDataRef.current = nextData;
+        setSensorData(nextData);
       });
 
       console.log('Subscribing to magnetometer...');
       // Subscribe to magnetometer (for orientation/heading)
       magnetometerSubscription.current = Magnetometer.addListener((data) => {
-        setSensorData((prev) => ({
-          ...prev,
+        const nextData = {
+          ...sensorDataRef.current,
           magnetometer: [
-            ...prev.magnetometer,
+            ...sensorDataRef.current.magnetometer,
             {
               x: data.x,
               y: data.y,
@@ -175,24 +209,28 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
               timestamp: Date.now(),
             },
           ],
-        }));
+        };
+        sensorDataRef.current = nextData;
+        setSensorData(nextData);
       });
 
       console.log('Subscribing to barometer...');
       // Subscribe to barometer (for altitude/elevation changes)
       try {
         barometerSubscription.current = Barometer.addListener((data) => {
-          setSensorData((prev) => ({
-            ...prev,
+          const nextData = {
+            ...sensorDataRef.current,
             barometer: [
-              ...prev.barometer,
+              ...sensorDataRef.current.barometer,
               {
                 pressure: data.pressure,
                 relativeAltitude: data.relativeAltitude,
                 timestamp: Date.now(),
               },
             ],
-          }));
+          };
+          sensorDataRef.current = nextData;
+          setSensorData(nextData);
         });
       } catch (error) {
         console.log('Barometer not available:', error.message);
@@ -201,10 +239,10 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
       console.log('Subscribing to device motion...');
       // Subscribe to device motion (combines accelerometer + gyroscope with filtering)
       deviceMotionSubscription.current = DeviceMotion.addListener((data) => {
-        setSensorData((prev) => ({
-          ...prev,
+        const nextData = {
+          ...sensorDataRef.current,
           deviceMotion: [
-            ...prev.deviceMotion,
+            ...sensorDataRef.current.deviceMotion,
             {
               acceleration: data.acceleration,
               accelerationIncludingGravity: data.accelerationIncludingGravity,
@@ -214,19 +252,41 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
               timestamp: Date.now(),
             },
           ],
-        }));
+        };
+        sensorDataRef.current = nextData;
+        setSensorData(nextData);
       });
 
       console.log('Subscribing to pedometer...');
       // Subscribe to pedometer (for step counting)
       try {
-        const start = Date.now();
-        pedometerSubscription.current = Pedometer.watchStepCount((result) => {
-          setPedometerData((prev) => ({
-            ...prev,
-            steps: result.steps,
-          }));
-        });
+        const isAvailable = await Pedometer.isAvailableAsync();
+        if (!isAvailable) {
+          console.log('Pedometer not available on this device');
+        } else {
+          const permissionResponse = await Pedometer.requestPermissionsAsync();
+          if (permissionResponse.status !== 'granted') {
+            console.log('Pedometer permission not granted');
+          } else {
+            const start = new Date();
+            pedometerSubscription.current = Pedometer.watchStepCount((result) => {
+              const nextPedometer = {
+                ...pedometerDataRef.current,
+                steps: result.steps,
+              };
+              pedometerDataRef.current = nextPedometer;
+              setPedometerData(nextPedometer);
+            });
+
+            const initialStepCount = await Pedometer.getStepCountAsync(start, new Date());
+            const nextPedometer = {
+              ...pedometerDataRef.current,
+              steps: initialStepCount.steps || 0,
+            };
+            pedometerDataRef.current = nextPedometer;
+            setPedometerData(nextPedometer);
+          }
+        }
       } catch (error) {
         console.log('Pedometer not available:', error.message);
       }
@@ -235,6 +295,7 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
       timerInterval.current = setInterval(() => {
         setRecordingTime((prev) => {
           const newTime = prev + 1;
+          recordingTimeRef.current = newTime;
           if (newTime % 5 === 0) {
             console.log(`Recording: ${newTime}s`);
           }
@@ -259,12 +320,13 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
   // Stop recording
   const stopRecording = () => {
     console.log('=== Stopping Recording ===');
-    console.log('Accelerometer samples:', sensorData.accelerometer.length);
-    console.log('Gyroscope samples:', sensorData.gyroscope.length);
-    console.log('Magnetometer samples:', sensorData.magnetometer.length);
-    console.log('Barometer samples:', sensorData.barometer.length);
-    console.log('DeviceMotion samples:', sensorData.deviceMotion.length);
-    console.log('Pedometer steps:', pedometerData.steps);
+    const latestSensorData = sensorDataRef.current;
+    console.log('Accelerometer samples:', latestSensorData.accelerometer.length);
+    console.log('Gyroscope samples:', latestSensorData.gyroscope.length);
+    console.log('Magnetometer samples:', latestSensorData.magnetometer.length);
+    console.log('Barometer samples:', latestSensorData.barometer.length);
+    console.log('DeviceMotion samples:', latestSensorData.deviceMotion.length);
+    console.log('Pedometer steps:', pedometerDataRef.current.steps);
     
     // Unsubscribe from sensors
     if (accelerometerSubscription.current) {
@@ -293,7 +355,9 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
     }
     
     // Update pedometer end time
-    setPedometerData((prev) => ({ ...prev, end: Date.now() }));
+    const finalizedPedometer = { ...pedometerDataRef.current, end: Date.now() };
+    pedometerDataRef.current = finalizedPedometer;
+    setPedometerData(finalizedPedometer);
 
     // Stop timer
     if (timerInterval.current) {
@@ -310,10 +374,10 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
     setIsRecording(false);
 
     // Check if we have enough data
-    if (sensorData.accelerometer.length < 10 || sensorData.gyroscope.length < 10) {
+    if (latestSensorData.accelerometer.length < 10 || latestSensorData.gyroscope.length < 10) {
       Alert.alert(
         'Insufficient Data',
-        `Only collected ${sensorData.accelerometer.length} samples. Please record for at least 10 seconds.`,
+        `Only collected ${latestSensorData.accelerometer.length} samples. Please record for at least 10 seconds.`,
         [
           {
             text: 'Try Again',
@@ -324,7 +388,7 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
           },
         ]
       );
-    } else if (recordingTime < 10) {
+    } else if (recordingTimeRef.current < 10) {
       Alert.alert(
         'Recording Too Short',
         'Please record for at least 10 seconds for accurate analysis.',
@@ -350,15 +414,19 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
     setIsAnalyzing(true);
     try {
       console.log('=== Starting Gait Analysis ===');
-      console.log('Total samples collected:', sensorData.accelerometer.length);
-      console.log('Recording duration:', recordingTime, 'seconds');
+      const latestSensorData = sensorDataRef.current;
+      const latestPedometer = pedometerDataRef.current;
+      const latestRecordingTime = recordingTimeRef.current;
+
+      console.log('Total samples collected:', latestSensorData.accelerometer.length);
+      console.log('Recording duration:', latestRecordingTime, 'seconds');
       
       // Prepare data for backend - match the Python backend format
-      const trimmedAccelerometer = downsampleSensorSeries(sensorData.accelerometer);
-      const trimmedGyroscope = downsampleSensorSeries(sensorData.gyroscope);
-      const trimmedMagnetometer = downsampleSensorSeries(sensorData.magnetometer);
-      const trimmedBarometer = downsampleSensorSeries(sensorData.barometer);
-      const trimmedDeviceMotion = downsampleSensorSeries(sensorData.deviceMotion);
+      const trimmedAccelerometer = downsampleSensorSeries(latestSensorData.accelerometer);
+      const trimmedGyroscope = downsampleSensorSeries(latestSensorData.gyroscope);
+      const trimmedMagnetometer = downsampleSensorSeries(latestSensorData.magnetometer);
+      const trimmedBarometer = downsampleSensorSeries(latestSensorData.barometer);
+      const trimmedDeviceMotion = downsampleSensorSeries(latestSensorData.deviceMotion);
 
       const requestData = {
         accelerometer: trimmedAccelerometer,
@@ -366,10 +434,10 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
         magnetometer: trimmedMagnetometer.length > 0 ? trimmedMagnetometer : undefined,
         barometer: trimmedBarometer.length > 0 ? trimmedBarometer : undefined,
         deviceMotion: trimmedDeviceMotion.length > 0 ? trimmedDeviceMotion : undefined,
-        pedometer: pedometerData.steps > 0 ? {
-          steps: pedometerData.steps,
-          startTime: pedometerData.start,
-          endTime: pedometerData.end || Date.now()
+        pedometer: latestPedometer.steps > 0 ? {
+          steps: latestPedometer.steps,
+          startTime: latestPedometer.start,
+          endTime: latestPedometer.end || Date.now()
         } : undefined,
         session_id: `session_${Date.now()}`,
       };
@@ -383,11 +451,11 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
         pedometer_steps: requestData.pedometer?.steps || 0,
         session_id: requestData.session_id,
         was_downsampled:
-          sensorData.accelerometer.length !== requestData.accelerometer.length ||
-          sensorData.gyroscope.length !== requestData.gyroscope.length ||
-          sensorData.magnetometer.length !== (requestData.magnetometer?.length || 0) ||
-          sensorData.barometer.length !== (requestData.barometer?.length || 0) ||
-          sensorData.deviceMotion.length !== (requestData.deviceMotion?.length || 0)
+          latestSensorData.accelerometer.length !== requestData.accelerometer.length ||
+          latestSensorData.gyroscope.length !== requestData.gyroscope.length ||
+          latestSensorData.magnetometer.length !== (requestData.magnetometer?.length || 0) ||
+          latestSensorData.barometer.length !== (requestData.barometer?.length || 0) ||
+          latestSensorData.deviceMotion.length !== (requestData.deviceMotion?.length || 0)
       });
 
       const result = await gaitAnalysisAPI.analyzeGait(requestData);
@@ -441,7 +509,7 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
           message += '\n' + (errorData.recommendation || 'Please try again with a longer walk.');
           
           setAnalysisResult({
-            analysis_duration: duration.value || recordingTime,
+            analysis_duration: duration.value || latestRecordingTime,
             data_quality: 'insufficient',
             metrics: {
               step_count: steps.value || 0,
@@ -452,7 +520,7 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
               stride_length: 0,
               step_regularity: 0,
               vertical_oscillation: 0,
-              pedometer_steps: pedometerData.steps || 0,
+              pedometer_steps: latestPedometer.steps || 0,
             },
             error: message,
             isValidationError: true,
@@ -491,7 +559,7 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
       
       // Handle other errors
       setAnalysisResult({
-        analysis_duration: recordingTime,
+        analysis_duration: latestRecordingTime,
         data_quality: 'error',
         metrics: {
           step_count: 0,
@@ -502,7 +570,7 @@ const GaitAnalysisScreen = ({ onBack, onNavigateToExercisePlan }) => {
           stride_length: 0,
           step_regularity: 0,
           vertical_oscillation: 0,
-          pedometer_steps: pedometerData.steps || 0,
+          pedometer_steps: latestPedometer.steps || 0,
         },
         error: error.message,
       });
