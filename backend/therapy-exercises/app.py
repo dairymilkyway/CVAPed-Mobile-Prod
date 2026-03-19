@@ -81,27 +81,31 @@ exercise_library = StrokeExerciseLibrary()
 exercise_recommender = ExerciseRecommender()
 print("✅ Stroke Exercise Recommender initialized")
 
-# Initialize Articulation Mastery Predictor (XGBoost ML)
+# Initialize heavy ML predictors lazily so the API can bind quickly
 mastery_predictor = None
-if db is not None:
-    try:
-        mastery_predictor = ArticulationMasteryPredictor(db)
-        mastery_predictor.load_model()  # Try to load existing model
-        print("✅ Articulation Mastery Predictor initialized")
-    except Exception as e:
-        print(f"⚠️  Articulation Mastery Predictor initialization failed: {e}")
-        mastery_predictor = None
-
-# Initialize Fluency Mastery Predictor (XGBoost ML)
 fluency_predictor = None
-if db is not None:
-    try:
+
+
+def get_articulation_predictor():
+    global mastery_predictor
+
+    if mastery_predictor is None and db is not None:
+        mastery_predictor = ArticulationMasteryPredictor(db)
+        mastery_predictor.load_model()
+        print("✅ Articulation Mastery Predictor initialized")
+
+    return mastery_predictor
+
+
+def get_fluency_predictor():
+    global fluency_predictor
+
+    if fluency_predictor is None and db is not None:
         fluency_predictor = FluencyMasteryPredictor(MONGO_URI or '', DB_NAME)
-        fluency_predictor.load_model()  # Try to load existing model
+        fluency_predictor.load_model()
         print("✅ Fluency Mastery Predictor initialized")
-    except Exception as e:
-        print(f"⚠️  Fluency Mastery Predictor initialization failed: {e}")
-        fluency_predictor = None
+
+    return fluency_predictor
 
 # Register blueprints (Speech Therapy)
 app.register_blueprint(fluency_bp)
@@ -177,7 +181,9 @@ def predict_mastery():
     }
     """
     try:
-        if mastery_predictor is None:
+        predictor = get_articulation_predictor()
+
+        if predictor is None:
             return jsonify({
                 'success': False,
                 'error': 'Mastery prediction service not available',
@@ -217,7 +223,7 @@ def predict_mastery():
         print(f"{'='*60}\n")
         
         # Make prediction
-        prediction = mastery_predictor.predict_days_to_mastery(user_id, sound_id)
+        prediction = predictor.predict_days_to_mastery(user_id, sound_id)
         
         print(f"✅ Prediction complete: {prediction['predicted_days']} days")
         print(f"   Confidence: {prediction['confidence']:.0%}")
@@ -246,7 +252,9 @@ def train_mastery_model():
     Returns training metrics and model performance
     """
     try:
-        if mastery_predictor is None:
+        predictor = get_articulation_predictor()
+
+        if predictor is None:
             return jsonify({
                 'success': False,
                 'error': 'Mastery prediction service not available'
@@ -257,7 +265,7 @@ def train_mastery_model():
         print(f"{'='*60}\n")
         
         # Retrain model
-        result = mastery_predictor.retrain_model()
+        result = predictor.retrain_model()
         
         if result.get('success'):
             print(f"✅ Model training complete")
@@ -288,13 +296,15 @@ def model_status():
     Returns whether model is trained and available for predictions
     """
     try:
-        if mastery_predictor is None:
+        predictor = get_articulation_predictor()
+
+        if predictor is None:
             return jsonify({
                 'available': False,
                 'message': 'Predictor not initialized'
             }), 200
         
-        model_loaded = mastery_predictor.model is not None
+        model_loaded = predictor.model is not None
         
         return jsonify({
             'available': True,
@@ -341,7 +351,9 @@ def predict_fluency_mastery():
     }
     """
     try:
-        if fluency_predictor is None:
+        predictor = get_fluency_predictor()
+
+        if predictor is None:
             return jsonify({
                 'success': False,
                 'error': 'Fluency prediction service not available',
@@ -372,7 +384,7 @@ def predict_fluency_mastery():
         print(f"{'='*60}\n")
         
         # Make prediction
-        prediction = fluency_predictor.predict_days_to_mastery(user_id)
+        prediction = predictor.predict_days_to_mastery(user_id)
         
         print(f"✅ Prediction complete: {prediction['predicted_days']} days")
         print(f"   Confidence: {prediction['confidence']:.0%}")
@@ -401,7 +413,9 @@ def train_fluency_model():
     Returns training metrics and model performance
     """
     try:
-        if fluency_predictor is None:
+        predictor = get_fluency_predictor()
+
+        if predictor is None:
             return jsonify({
                 'success': False,
                 'error': 'Fluency prediction service not available'
@@ -412,7 +426,7 @@ def train_fluency_model():
         print(f"{'='*60}\n")
         
         # Train model
-        result = fluency_predictor.train_model()
+        result = predictor.train_model()
         
         if result.get('success'):
             print(f"✅ Fluency model training complete")
@@ -443,13 +457,15 @@ def fluency_model_status():
     Returns whether model is trained and available for predictions
     """
     try:
-        if fluency_predictor is None:
+        predictor = get_fluency_predictor()
+
+        if predictor is None:
             return jsonify({
                 'available': False,
                 'message': 'Fluency predictor not initialized'
             }), 200
         
-        model_loaded = fluency_predictor.model is not None
+        model_loaded = predictor.model is not None
         
         return jsonify({
             'available': True,
@@ -616,25 +632,36 @@ def get_exercise_by_id(exercise_id):
 # LANGUAGE MASTERY PREDICTION ENDPOINTS (Receptive & Expressive)
 # ============================================================================
 
-# Initialize language predictors
+# Initialize heavy predictors lazily so the API can boot quickly in production
 language_receptive_predictor = None
 language_expressive_predictor = None
-
-try:
-    language_receptive_predictor = LanguageMasteryPredictor(mode='receptive')
-    language_expressive_predictor = LanguageMasteryPredictor(mode='expressive')
-    print("✅ Language mastery predictors initialized")
-except Exception as e:
-    print(f"⚠️  Could not initialize language predictors: {e}")
-
-# Initialize overall speech improvement predictor
 overall_speech_predictor = None
 
-try:
-    overall_speech_predictor = OverallSpeechPredictor()
-    print("✅ Overall speech improvement predictor initialized")
-except Exception as e:
-    print(f"⚠️  Could not initialize overall speech predictor: {e}")
+
+def get_language_predictor(mode):
+    global language_receptive_predictor
+    global language_expressive_predictor
+
+    if mode == 'receptive':
+        if language_receptive_predictor is None:
+            language_receptive_predictor = LanguageMasteryPredictor(mode='receptive')
+            print("✅ Receptive language predictor initialized")
+        return language_receptive_predictor
+
+    if language_expressive_predictor is None:
+        language_expressive_predictor = LanguageMasteryPredictor(mode='expressive')
+        print("✅ Expressive language predictor initialized")
+    return language_expressive_predictor
+
+
+def get_overall_speech_predictor():
+    global overall_speech_predictor
+
+    if overall_speech_predictor is None:
+        overall_speech_predictor = OverallSpeechPredictor()
+        print("✅ Overall speech improvement predictor initialized")
+
+    return overall_speech_predictor
 
 @app.route('/api/language/predict-mastery', methods=['POST'])
 def predict_language_mastery():
@@ -660,7 +687,7 @@ def predict_language_mastery():
             }), 400
         
         # Select appropriate predictor
-        predictor = language_receptive_predictor if mode == 'receptive' else language_expressive_predictor
+        predictor = get_language_predictor(mode)
         
         if predictor is None or predictor.model is None:
             return jsonify({
@@ -715,14 +742,14 @@ def train_language_model():
         # Train receptive model
         if mode in ['receptive', 'both']:
             global language_receptive_predictor
-            language_receptive_predictor = LanguageMasteryPredictor(mode='receptive')
+            language_receptive_predictor = get_language_predictor('receptive')
             receptive_metrics = language_receptive_predictor.train_model()
             results['receptive'] = receptive_metrics
         
         # Train expressive model  
         if mode in ['expressive', 'both']:
             global language_expressive_predictor
-            language_expressive_predictor = LanguageMasteryPredictor(mode='expressive')
+            language_expressive_predictor = get_language_predictor('expressive')
             expressive_metrics = language_expressive_predictor.train_model()
             results['expressive'] = expressive_metrics
         
@@ -746,8 +773,19 @@ def train_language_model():
 def language_model_status():
     """Get status of language mastery prediction models"""
     try:
-        receptive_available = language_receptive_predictor is not None and language_receptive_predictor.model is not None
-        expressive_available = language_expressive_predictor is not None and language_expressive_predictor.model is not None
+        try:
+            receptive_predictor = get_language_predictor('receptive')
+            receptive_available = receptive_predictor is not None and receptive_predictor.model is not None
+        except Exception as e:
+            receptive_available = False
+            print(f"⚠️  Receptive model status unavailable: {e}")
+
+        try:
+            expressive_predictor = get_language_predictor('expressive')
+            expressive_available = expressive_predictor is not None and expressive_predictor.model is not None
+        except Exception as e:
+            expressive_available = False
+            print(f"⚠️  Expressive model status unavailable: {e}")
         
         return jsonify({
             'receptive': {
@@ -791,7 +829,9 @@ def predict_overall_improvement():
                 'error': 'user_id is required'
             }), 400
         
-        if overall_speech_predictor is None or overall_speech_predictor.model is None:
+        predictor = get_overall_speech_predictor()
+
+        if predictor is None or predictor.model is None:
             return jsonify({
                 'success': False,
                 'error': 'Overall speech prediction model is not available. Please train the model first.',
@@ -805,7 +845,7 @@ def predict_overall_improvement():
         print(f"{'='*60}\n")
         
         # Get prediction
-        prediction = overall_speech_predictor.predict_improvement(user_id)
+        prediction = predictor.predict_improvement(user_id)
         
         return jsonify({
             'success': True,
@@ -833,19 +873,15 @@ def train_overall_model():
         print(f"🤖 Overall Speech Model Training Request")
         print(f"{'='*60}\n")
         
-        if overall_speech_predictor is None:
-            return jsonify({
-                'success': False,
-                'error': 'Overall speech predictor not initialized'
-            }), 500
+        predictor = get_overall_speech_predictor()
         
         # Train model
-        overall_speech_predictor.train_model()
+        predictor.train_model()
         
         return jsonify({
             'success': True,
             'message': 'Overall speech improvement model trained successfully',
-            'model_path': overall_speech_predictor.model_path
+            'model_path': predictor.model_path
         }), 200
         
     except Exception as e:
@@ -862,7 +898,14 @@ def train_overall_model():
 def overall_model_status():
     """Get status of the overall speech improvement prediction model"""
     try:
-        available = overall_speech_predictor is not None and overall_speech_predictor.model is not None
+        try:
+            predictor = get_overall_speech_predictor()
+            available = predictor is not None and predictor.model is not None
+        except Exception as e:
+            return jsonify({
+                'available': False,
+                'error': str(e)
+            }), 500
         
         return jsonify({
             'available': available,

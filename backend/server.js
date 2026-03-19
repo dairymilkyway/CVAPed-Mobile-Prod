@@ -70,11 +70,13 @@ const successStoryRoutes = require('./routes/successStoryRoutes');
 const therapistRoutes = require('./routes/therapistRoutes');
 const appointmentRoutes = require('./routes/appointmentRoutes');
 const diagnosticComparisonRoutes = require('./routes/diagnosticComparisonRoutes');
+const therapyProxyRoutes = require('./routes/therapyProxyRoutes');
 
 app.locals.db = null;
 
 // Mount routers
 app.use('/api/auth', authRoutes);
+app.use('/api', therapyProxyRoutes);
 app.use('/api/gait', gaitRoutes);
 app.use('/api/exercises', exerciseRoutes);
 app.use('/api/admin', adminRoutes);
