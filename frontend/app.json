@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "CVAPed",
-    "slug": "cvacare",
+    "slug": "cvaped",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/CVAPed_Text_square.png",
