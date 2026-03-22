@@ -18,6 +18,9 @@ COPY therapy-exercises/requirements.txt ./therapy-exercises/requirements.txt
 RUN pip3 install --no-cache-dir --break-system-packages -r ./gait-analysis/requirements.txt && \
     pip3 install --no-cache-dir --break-system-packages -r ./therapy-exercises/requirements.txt
 
+COPY patch-frozendict.sh /usr/local/bin/patch-frozendict.sh
+RUN chmod +x /usr/local/bin/patch-frozendict.sh && /usr/local/bin/patch-frozendict.sh
+
 COPY . .
 
 ENV NODE_ENV=production
